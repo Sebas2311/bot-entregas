@@ -6,16 +6,11 @@ const CHAT_ID = '8002524743';
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 const entregas = [];
+const estados = {};
 
-bot.onText(/\/nueva (.+)/, (msg, match) => {
-  const partes = match[1].split('|');
-  if (partes.length < 3) {
-    bot.sendMessage(CHAT_ID, 'Formato: /nueva Nombre del trabajo|DD/MM/YYYY|HH:MM');
-    return;
-  }
-  const [nombre, fecha, hora] = partes.map(p => p.trim());
-  entregas.push({ nombre, fecha, hora });
-  bot.sendMessage(CHAT_ID, `✅ Guardado: ${nombre} — ${fecha} a las ${hora}`);
+bot.onText(/\/nueva/, (msg) => {
+  estados[CHAT_ID] = { paso: 1 };
+  bot.sendMessage(CHAT_ID, '¿Cuál es el nombre del trabajo o entrega?');
 });
 
 bot.onText(/\/lista/, () => {
@@ -35,6 +30,37 @@ bot.onText(/\/eliminar (\d+)/, (msg, match) => {
   }
   const eliminada = entregas.splice(num, 1)[0];
   bot.sendMessage(CHAT_ID, `🗑️ Eliminada: ${eliminada.nombre}`);
+});
+
+bot.on('message', (msg) => {
+  const texto = msg.text.trim();
+  if (texto.startsWith('/')) return;
+  const estado = estados[CHAT_ID];
+  if (!estado) return;
+
+  if (estado.paso === 1) {
+    estado.nombre = texto;
+    estado.paso = 2;
+    bot.sendMessage(CHAT_ID, '¿Cuál es la fecha de entrega? (DD/MM/YY)');
+  } else if (estado.paso === 2) {
+    const partes = texto.split('/');
+    if (partes.length !== 3 || partes[0].length !== 2 || partes[1].length !== 2 || partes[2].length !== 2) {
+      bot.sendMessage(CHAT_ID, 'Formato inválido. Escríbela así: DD/MM/YY — por ejemplo 15/06/26');
+      return;
+    }
+    estado.fecha = `${partes[0]}/${partes[1]}/20${partes[2]}`;
+    estado.paso = 3;
+    bot.sendMessage(CHAT_ID, '¿A qué hora vence? (HH:MM)');
+  } else if (estado.paso === 3) {
+    if (!/^\d{2}:\d{2}$/.test(texto)) {
+      bot.sendMessage(CHAT_ID, 'Formato inválido. Escríbela así: HH:MM — por ejemplo 23:59');
+      return;
+    }
+    estado.hora = texto;
+    entregas.push({ nombre: estado.nombre, fecha: estado.fecha, hora: estado.hora });
+    delete estados[CHAT_ID];
+    bot.sendMessage(CHAT_ID, `✅ Guardado: ${estado.nombre} — ${estado.fecha} a las ${estado.hora}`);
+  }
 });
 
 cron.schedule('* * * * *', () => {
